@@ -50,6 +50,14 @@ function get_new_context {
         fi
 
         echo "umount /mnt" > ${END_CONTEXT}
+    elif [ -e "/dev/disk/by-label/CDROM" ]; then
+        mount -t iso9660 -L CDROM -o ro /mnt
+        if [ -f /mnt/context.sh ]; then
+            export_rc_vars /mnt/context.sh
+        fi
+
+        execute_scripts
+        umount /mnt
     elif curl -o ${CONTEXT_NEW} http://169.254.169.254/latest/user-data ; then
         echo -n ""
     elif type vmtoolsd ; then

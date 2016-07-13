@@ -153,6 +153,14 @@ get_dev()
 
     echo "$list" | grep "$mac" | cut -d' ' -f1 | tail -n1
 }
+## Additions for getting IB interfaces
+get_ib_interface_mac()
+{
+    ip link show | awk '/^[0-9]+: [[:alnum:]]+:/ { device=$2; gsub(/:/, "",device)} /link\/infiniband/ { print device " " $2 }' | sed -e 's/ /-/g'
+}
+upcase() {
+    echo "$*" | tr '[:lower:]' '[:upper:]'
+}
 
 gen_network_configuration()
 {
@@ -160,25 +168,45 @@ gen_network_configuration()
     CONTEXT_INTERFACES=$(get_context_interfaces)
     GATEWAY_IFACE_NUM=$(echo "$GATEWAY_IFACE" | sed 's/^ETH//')
 
+    IB_INTERFACE_MAC=$(get_ib_interface_mac)
+
     for interface in $CONTEXT_INTERFACES; do
         UPCASE_DEV=$interface
         MAC=$(get_iface_var "MAC")
         DEV=$(get_dev "$INTERFACE_MAC" "$MAC")
         IFACE_NUM=$(echo "$UPCASE_DEV" | sed 's/^ETH//')
 
-        IP=$(get_ip)
+        ## IB DEV interface:
+        if_vf=$(echo "$DEV" | cut -c 1-3)
+	eth_dev="eth"
+
+        if [ "$if_vf" != "eth" ]; then
+            TYPE="Infiniband"
+            ip_mac=$(echo "$MAC" | tail -c 18)
+            dev_mac=$(echo "$MAC" | tail -c 12)
+            ib_dev=$(echo "$IB_INTERFACE_MAC" | grep "$dev_mac")
+            DEV=$(echo "$ib_dev" | cut -c 1-3)
+            UPCASE_DEV=`upcase $DEV`
+	    IP=`mac2ip $ip_mac`
+        else
+            TYPE="Ethernet"
+            DEV=$DEV
+            IP=$(get_ip)
+        fi
+
         NETWORK=$(get_network)
         MASK=$(get_mask)
-        MTU=$(get_mtu)
+       # MTU=$(get_mtu)
         GATEWAY=$(get_gateway)
+
 
         IPV6=$(get_iface_var "IPV6")
         [[ -z $IPV6 ]] && IPV6=$(get_iface_var "IP6")
         GATEWAY6=$(get_gateway6)
         CONTEXT_FORCE_IPV4=$(get_iface_var "CONTEXT_FORCE_IPV4")
 
-        [ -z "${IP}${IPV6}" ] && continue
-        [ -z "${DEV}" ] && continue
+#        [ -z "${IP}${IPV6}" ] && continue
+#        [ -z "${DEV}" ] && continue
 
         (
             cat <<EOT
@@ -186,7 +214,7 @@ DEVICE=$DEV
 BOOTPROTO=none
 ONBOOT=yes
 NM_CONTROLLED=no
-TYPE=Ethernet
+TYPE=$TYPE
 EOT
             [[ -z $IPV6 || -n $CONTEXT_FORCE_IPV4 ]] && gen_iface_conf
             [[ -n $IPV6 ]] && gen_iface6_conf
